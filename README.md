@@ -28,7 +28,9 @@ Detic/
 
 ## Evaluation
 
-Then, we can run our code with the command `python evaluate.py --vid_source_root ./videos-pirates/vid_09-23 --dist_thresh 120`. By default, the prediction results will be saved to `result_pred.csv`.
+Then, we can run our code with the command `python evaluate.py --vid_source_root ./videos-pirates/vid_09-23`. By default, the prediction results will be saved to `BatEstimation_v2.csv`.
+
+For amateur dataset, we recommend running with the command `python evaluate.py --vid_source_root ./videos-pirates/amateur_videos --left_win 100`
 
 You can also save intermediate detection results for multiple runs by adding the `--det_result_root` argument.
 

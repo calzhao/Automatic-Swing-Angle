@@ -11,7 +11,8 @@ from centernet.config import add_centernet_config
 from detic.config import add_detic_config
 from detic.predictor import VisualizationDemo
 
-from utils import saveVid, get_prediction, angle_estimation, frame_detection
+from utils import saveVid, get_prediction, angle_estimation, frame_detection_v2, draw_plot
+from model_utils import load_model
 
 def setup_cfg(args):
     cfg = get_cfg()
@@ -31,24 +32,38 @@ def setup_cfg(args):
     cfg.freeze()
     return cfg
 
-def kf_angle_pred_with_load(det_res_root, vid_file, kf_range, thresh=float('inf')):
+def kf_angle_pred_with_load(det_res_root, vid_file, model, gt_keyframe=None, kf_range=(190, 250), win_len=3):
     f_path = os.path.join(det_res_root, vid_file+'.npz')
     vid_info = np.load(f_path)
-    return kf_angle_pred(vid_info, kf_range, thresh)
+    return kf_angle_pred(vid_info, model, gt_keyframe, kf_range, win_len=win_len)
 
-def kf_angle_pred(vid_info, kf_range, thresh=float('inf')):
+def kf_angle_pred(vid_info, model, gt_keyframe=None, kf_range = (190, 250), win_len=3):
     boxes = vid_info['boxes']
     scores = vid_info['scores']
     masks = vid_info['masks']
-    
-    keyframe, kf_dist = frame_detection(scores, boxes, thresh, kf_range)
+
+    _, H, W = masks.shape
+    keyframe, kf_conf = frame_detection_v2(model, scores, boxes, kf_range=kf_range, 
+                                           win_len=win_len)
+
+    est_angle, est_conf_angle = -1, 0
     if keyframe > 0:
         kf_mask = masks[keyframe-kf_range[0]]
-        est_angle, conf_angle = angle_estimation(kf_mask)
-    else:
-        est_angle, conf_angle = -1, 0
+        est_angle, est_conf_angle = angle_estimation(kf_mask)
+    # else:
+    #     est_angle, est_conf_angle = -1, 0
 
-    return keyframe, kf_dist, est_angle, conf_angle
+    gt_angle, gt_conf_angle = -1, 0
+    if gt_keyframe:
+        score = scores[gt_keyframe-kf_range[0]]
+        # print(gt_keyframe, score)
+        if score == 0:
+            gt_angle, gt_conf_angle = -1, 0
+        else:
+            gt_mask = masks[gt_keyframe-kf_range[0]]
+            gt_angle, gt_conf_angle = angle_estimation(gt_mask)
+
+    return keyframe, kf_conf, est_angle, est_conf_angle, gt_angle, gt_conf_angle
 
 
 def get_parser():
@@ -98,27 +113,27 @@ def get_parser():
         type=int
     )
     parser.add_argument(
-        "--dist_thresh",
-        help="threshold for filtering the keyframe candidates",
-        default=float('inf'),
-        type=float
+        "--win_size",
+        help="the context window size",
+        default=5,
+        type=int
     )
     parser.add_argument(
         "--vid_source_root",
         help="The path to the video root",
-        default="./video_data/demo_videos/",
+        default="./demo_videos",
         type=str
     )
     parser.add_argument(
         "--det_result_root",
         help="The path to the video root",
-        default= None,
+        default=None,
         type=str
     )
     parser.add_argument(
         "--result_path",
         help="the path to save the keyframe detection results",
-        default='./result_pred.csv',
+        default='./BatEstimation_v2.csv',
         type=str
     )
     return parser
@@ -130,34 +145,49 @@ if __name__ == "__main__":
     predictor = VisualizationDemo(cfg, args)
     vid_source_root = args.vid_source_root
     det_result_root = args.det_result_root
-    if det_result_root:
-        os.makedirs(det_result_root, exist_ok=True)
 
-    df = pd.DataFrame(columns=['PitchID', 'Keyframe_Pred', 'Keyframe_BBOX_Dist', 'Angle_Est', 'Angle_Conf'])
-    name_list, keyframe_list, kf_dist_list, est_angle_list, conf_angle_list = [], [], [], [], []
+    exp_name = "batangle_v2"
+    file_name = "/v2.pth"
+    model_path = "./checkpoint/"+exp_name+file_name
+    window_size = args.win_size
+    model = load_model(model_path,win_len=window_size)
+    model.eval()
+
+    df = pd.DataFrame(columns=['PitchID', 'Keyframe_Pred', 'Keyframe_Confidence', 'Angle_Est', 'Angle_Conf'])
+    name_list, keyframe_list, est_angle_list, est_conf_angle_list, \
+        keyframe_conf_list, gt_anle_list, gt_conf_angle_list = [], [], [], [], [], [], []
     vid_list = sorted(os.listdir(vid_source_root))
-    proc_bar = tqdm(range(len(vid_list)))
-    for vid_idx in proc_bar:
-        vid_name = vid_list[vid_idx].split('.')[0]
+    # proc_bar = tqdm(range(len(vid_list)))
+    proc_bar = tqdm(range(10))
+    for idx in proc_bar:
+        vid_name = vid_list[idx].split('.')[0]
+        kf_gt = None
         if det_result_root:
             saveVid(predictor, vid_name, vid_source_root, det_result_root, args, proc_bar=proc_bar)
-            kf_idx, kf_dist, est_angle, conf_angle = kf_angle_pred_with_load(det_result_root, vid_name,
-                                                    kf_range = (args.left_win, args.right_win))
+            kf_idx, kf_conf, est_angle, est_conf_angle, gt_anle, gt_conf_angle \
+                = kf_angle_pred_with_load(det_result_root, vid_name, model,
+                gt_keyframe = kf_gt ,kf_range = (args.left_win, args.right_win), 
+                win_len=window_size)
         else:
-            pred_info = get_prediction(predictor, vid_name, vid_source_root, window=(args.left_win,args.right_win), proc_bar=proc_bar)
-            kf_idx, kf_dist, est_angle, conf_angle = kf_angle_pred(pred_info,
-                                                    kf_range = (args.left_win, args.right_win), thresh=args.dist_thresh)        
-        
+            pred_info = get_prediction(predictor, vid_name, vid_source_root, \
+                    window=(args.left_win,args.right_win), proc_bar=proc_bar)
+            kf_idx, kf_conf, est_angle, est_conf_angle, gt_anle, gt_conf_angle \
+                    = kf_angle_pred(pred_info, model, gt_keyframe = kf_gt,
+                                    kf_range = (args.left_win, args.right_win), 
+                                    win_len=window_size)       
         name_list.append(vid_name)
         keyframe_list.append(kf_idx)
-        kf_dist_list.append(kf_dist)
+        keyframe_conf_list.append(kf_conf)
         est_angle_list.append(est_angle)
-        conf_angle_list.append(conf_angle)
+        est_conf_angle_list.append(est_conf_angle)
+        gt_anle_list.append(gt_anle)
+        gt_conf_angle_list.append(gt_conf_angle)
         proc_bar.set_description('vid [{}]'.format(vid_name))
 
     df['PitchID'] = name_list
     df['Keyframe_Pred'] = keyframe_list
-    df['Keyframe_BBOX_Dist'] = kf_dist_list
+    df['Keyframe_Confidence'] = keyframe_conf_list
     df['Angle_Est'] = est_angle_list
-    df['Angle_Conf'] = conf_angle_list
+    df['Angle_Conf'] = est_conf_angle_list
+
     df.to_csv(args.result_path, index=False)
