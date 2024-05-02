@@ -261,15 +261,17 @@ def find_peaks(arr, l_bound=190, r_bound=249):
 
     # Check the last element
     if arr[-1] >= arr[-2]:
-        peaks.append(r_bound)
+        peaks.append(l_bound+n-1)
 
     return np.array(peaks)
 
 
 def context_proposal(conf_seq, peaks, context_window=3, l_bound=190, r_bound=250):
     candidates = []
+    # print(len(conf_seq), l_bound, r_bound, peaks)
     for p in peaks:
-        for idx in range(max(p - context_window, l_bound), min(p + context_window + 1, r_bound)):
+        for idx in range(max(p - context_window, l_bound, 0), \
+            min(p + context_window + 1, r_bound, len(conf_seq)+l_bound)):
             if conf_seq[idx - l_bound] > 0.4 and idx not in candidates:
                 candidates.append(idx)
     return np.asarray(candidates)
