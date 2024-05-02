@@ -157,8 +157,7 @@ if __name__ == "__main__":
     name_list, keyframe_list, est_angle_list, est_conf_angle_list, \
         keyframe_conf_list, gt_anle_list, gt_conf_angle_list = [], [], [], [], [], [], []
     vid_list = sorted(os.listdir(vid_source_root))
-    # proc_bar = tqdm(range(len(vid_list)))
-    proc_bar = tqdm(range(10))
+    proc_bar = tqdm(range(len(vid_list)))
     for idx in proc_bar:
         vid_name = vid_list[idx].split('.')[0]
         kf_gt = None
