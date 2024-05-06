@@ -136,6 +136,12 @@ def get_parser():
         default='./BatEstimation_v2.csv',
         type=str
     )
+    parser.add_argument(
+        "--vid_link_input",
+        help="file containing video links",
+        default=None,
+        type=str
+    )
     return parser
 
 if __name__ == "__main__":
@@ -145,6 +151,7 @@ if __name__ == "__main__":
     predictor = VisualizationDemo(cfg, args)
     vid_source_root = args.vid_source_root
     det_result_root = args.det_result_root
+    vid_link_input = args.vid_link_input
 
     exp_name = "batangle_v2"
     file_name = "/v2.pth"
@@ -153,13 +160,24 @@ if __name__ == "__main__":
     model = load_model(model_path,win_len=window_size)
     model.eval()
 
-    df = pd.DataFrame(columns=['PitchID', 'Keyframe_Pred', 'Keyframe_Confidence', 'Angle_Est', 'Angle_Conf'])
     name_list, keyframe_list, est_angle_list, est_conf_angle_list, \
         keyframe_conf_list, gt_anle_list, gt_conf_angle_list = [], [], [], [], [], [], []
-    vid_list = sorted(os.listdir(vid_source_root))
+    if vid_link_input != None:
+        vid_link_file = pd.read_csv(vid_link_input)
+        pitch_list = list(vid_link_file['PitchId'].values)
+        vid_list = list(vid_link_file['VideoLink'].values)
+    else:
+        vid_list = sorted(os.listdir(vid_source_root))
     proc_bar = tqdm(range(len(vid_list)))
+
+    with open(args.result_path, 'w') as file:
+        file.write('PitchID,KeyFrame_Pred,Keyframe_Confidence,Angle_Est,Angle_Conf\n')
+
     for idx in proc_bar:
-        vid_name = vid_list[idx].split('.')[0]
+        if vid_link_input != None:
+            vid_name = pitch_list[idx]
+        else:
+            vid_name = vid_list[idx].split('.')[0]
         kf_gt = None
         if det_result_root:
             saveVid(predictor, vid_name, vid_source_root, det_result_root, args, proc_bar=proc_bar)
@@ -169,24 +187,12 @@ if __name__ == "__main__":
                 win_len=window_size)
         else:
             pred_info = get_prediction(predictor, vid_name, vid_source_root, \
-                    window=(args.left_win,args.right_win), proc_bar=proc_bar)
+                    window=(args.left_win,args.right_win), proc_bar=proc_bar, vid_link=vid_list[idx])
             kf_idx, kf_conf, est_angle, est_conf_angle, gt_anle, gt_conf_angle \
                     = kf_angle_pred(pred_info, model, gt_keyframe = kf_gt,
                                     kf_range = (args.left_win, args.right_win), 
                                     win_len=window_size)       
-        name_list.append(vid_name)
-        keyframe_list.append(kf_idx)
-        keyframe_conf_list.append(kf_conf)
-        est_angle_list.append(est_angle)
-        est_conf_angle_list.append(est_conf_angle)
-        gt_anle_list.append(gt_anle)
-        gt_conf_angle_list.append(gt_conf_angle)
-        proc_bar.set_description('vid [{}]'.format(vid_name))
 
-    df['PitchID'] = name_list
-    df['Keyframe_Pred'] = keyframe_list
-    df['Keyframe_Confidence'] = keyframe_conf_list
-    df['Angle_Est'] = est_angle_list
-    df['Angle_Conf'] = est_conf_angle_list
-
-    df.to_csv(args.result_path, index=False)
+        str_to_write = f'{vid_name},{kf_idx},{kf_conf},{est_angle},{est_conf_angle}\n'
+        with open(args.result_path, 'a') as file:
+            file.write(str_to_write)

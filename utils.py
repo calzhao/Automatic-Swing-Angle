@@ -10,6 +10,8 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import pandas as pd
 
+import urllib.request
+
 def angle_estimation(mask):
     kernel = np.ones((2, 2), np.uint8)
     cleaned_mask = cv2.dilate(mask.astype(np.uint8), kernel, iterations=1)
@@ -134,11 +136,15 @@ def saveVid(predictor, vidName, vidSrcRoot, detResRoot, args, proc_bar = None):
     print(scores.shape, boxes.shape, masks.shape)
     np.savez(save_path, boxes=boxes, scores=scores, masks=masks)
     
-def get_prediction(predictor, vidName, vidSrcRoot, window, proc_bar = None):
+def get_prediction(predictor, vidName, vidSrcRoot, window, proc_bar = None, vid_link = None):
     vid_masks = []
     vid_boxes = []
     vid_scores = []
-    video = loadVid(os.path.join(vidSrcRoot, vidName+'.mp4'))
+    if vid_link != None:
+        urllib.request.urlretrieve(vid_link, 'tmp/temp_vid.mp4') 
+        video = loadVid('tmp/temp_vid.mp4')
+    else:
+        video = loadVid(os.path.join(vidSrcRoot, vidName+'.mp4'))
     video = video[window[0]:window[1], :, :]
 
     for i in range(len(video)):
