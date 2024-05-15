@@ -88,20 +88,23 @@ def frame_detection_v2(model, scores, bboxes, threshold=0.8, kf_range=(190, 250)
 
     return proposals[pred_idx], predicted[pred_idx].detach().numpy()
 
-def loadVid(path):
+def loadVid(path, max_frame):
     # Create a VideoCapture object and read from input file
     # If the input is the camera, pass 0 instead of the video file name
 
     cap = cv2.VideoCapture(path)
+
     frames = []
+    frame_counter = 0
 
     if cap.isOpened() == False:
         print("Error opening video stream or file")
 
-    while (cap.isOpened()):
+    while (cap.isOpened() and frame_counter < max_frame):
         ret, frame = cap.read()
         if ret:
             frames.append(frame)
+            frame_counter += 1
         else:
             break
         
@@ -133,7 +136,6 @@ def saveVid(predictor, vidName, vidSrcRoot, detResRoot, args, proc_bar = None):
     pred_info = get_prediction(predictor, vidName, vidSrcRoot, (args.left_win,args.right_win), proc_bar=proc_bar)
     boxes, scores, masks = pred_info['boxes'], pred_info['scores'], pred_info['masks']
     save_path = os.path.join(detResRoot, '{}.npz'.format(vidName))
-    print(scores.shape, boxes.shape, masks.shape)
     np.savez(save_path, boxes=boxes, scores=scores, masks=masks)
     
 def get_prediction(predictor, vidName, vidSrcRoot, window, proc_bar = None, vid_link = None):
@@ -141,10 +143,14 @@ def get_prediction(predictor, vidName, vidSrcRoot, window, proc_bar = None, vid_
     vid_boxes = []
     vid_scores = []
     if vid_link != None:
-        urllib.request.urlretrieve(vid_link, 'tmp/temp_vid.mp4') 
-        video = loadVid('tmp/temp_vid.mp4')
+        try:
+            urllib.request.urlretrieve(vid_link, 'tmp/temp_vid.mp4') 
+        except:
+            print("Error downloading video.")
+            return -1
+        video = loadVid('tmp/temp_vid.mp4', max_frame=window[1])
     else:
-        video = loadVid(os.path.join(vidSrcRoot, vidName+'.mp4'))
+        video = loadVid(os.path.join(vidSrcRoot, vidName+'.mp4'), max_frame=window[1])
     video = video[window[0]:window[1], :, :]
 
     for i in range(len(video)):

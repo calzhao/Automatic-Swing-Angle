@@ -170,8 +170,8 @@ if __name__ == "__main__":
         vid_list = sorted(os.listdir(vid_source_root))
     proc_bar = tqdm(range(len(vid_list)))
 
-    with open(args.result_path, 'w') as file:
-        file.write('PitchID,KeyFrame_Pred,Keyframe_Confidence,Angle_Est,Angle_Conf\n')
+    #with open(args.result_path, 'w') as file:
+    #    file.write('PitchID,KeyFrame_Pred,Keyframe_Confidence,Angle_Est,Angle_Conf\n')
 
     for idx in proc_bar:
         if vid_link_input != None:
@@ -188,6 +188,8 @@ if __name__ == "__main__":
         else:
             pred_info = get_prediction(predictor, vid_name, vid_source_root, \
                     window=(args.left_win,args.right_win), proc_bar=proc_bar, vid_link=vid_list[idx])
+            if pred_info == -1:
+                continue
             kf_idx, kf_conf, est_angle, est_conf_angle, gt_anle, gt_conf_angle \
                     = kf_angle_pred(pred_info, model, gt_keyframe = kf_gt,
                                     kf_range = (args.left_win, args.right_win), 
