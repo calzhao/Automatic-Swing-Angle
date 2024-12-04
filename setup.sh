@@ -20,3 +20,4 @@ pip install -r requirements.txt
 mkdir models
 wget https://dl.fbaipublicfiles.com/detic/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.pth -O models/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.pth
 gdown https://drive.google.com/uc?id=1ZlP0Wxsr4NbgmhdnshLYpgCU_aVRUUXW
+gdown https://drive.google.com/uc?id=1nahn59cQ7-NkLR-ocSIp7lUPwcAveIf-

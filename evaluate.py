@@ -2,8 +2,8 @@ import argparse
 import os
 import sys
 from tqdm import tqdm
-import numpy as np
 import pandas as pd
+import torch
 
 from detectron2.config import get_cfg
 sys.path.insert(0, 'third_party/CenterNet2/')
@@ -11,8 +11,7 @@ from centernet.config import add_centernet_config
 from detic.config import add_detic_config
 from detic.predictor import VisualizationDemo
 
-from utils import saveVid, get_prediction, angle_estimation, frame_detection_v2, draw_plot
-from model_utils import load_model
+from dino_keyframe import  DinoCNN, keyframe_detection, get_prediction, angle_estimation
 
 def setup_cfg(args):
     cfg = get_cfg()
@@ -32,38 +31,16 @@ def setup_cfg(args):
     cfg.freeze()
     return cfg
 
-def kf_angle_pred_with_load(det_res_root, vid_file, model, gt_keyframe=None, kf_range=(190, 250), win_len=3):
-    f_path = os.path.join(det_res_root, vid_file+'.npz')
-    vid_info = np.load(f_path)
-    return kf_angle_pred(vid_info, model, gt_keyframe, kf_range, win_len=win_len)
-
-def kf_angle_pred(vid_info, model, gt_keyframe=None, kf_range = (190, 250), win_len=3):
-    boxes = vid_info['boxes']
-    scores = vid_info['scores']
-    masks = vid_info['masks']
-
-    _, H, W = masks.shape
-    keyframe, kf_conf = frame_detection_v2(model, scores, boxes, kf_range=kf_range, 
-                                           win_len=win_len)
+def kf_angle_pred(vid_info):
+    box = vid_info['boxes']
+    score = vid_info['scores']
+    mask = vid_info['masks']
 
     est_angle, est_conf_angle = -1, 0
-    if keyframe > 0:
-        kf_mask = masks[keyframe-kf_range[0]]
-        est_angle, est_conf_angle = angle_estimation(kf_mask)
-    # else:
-    #     est_angle, est_conf_angle = -1, 0
+    if score > 0:
+        est_angle, est_conf_angle = angle_estimation(mask)
 
-    gt_angle, gt_conf_angle = -1, 0
-    if gt_keyframe:
-        score = scores[gt_keyframe-kf_range[0]]
-        # print(gt_keyframe, score)
-        if score == 0:
-            gt_angle, gt_conf_angle = -1, 0
-        else:
-            gt_mask = masks[gt_keyframe-kf_range[0]]
-            gt_angle, gt_conf_angle = angle_estimation(gt_mask)
-
-    return keyframe, kf_conf, est_angle, est_conf_angle, gt_angle, gt_conf_angle
+    return est_angle, est_conf_angle
 
 
 def get_parser():
@@ -101,33 +78,9 @@ def get_parser():
     
     # self-defined arguments
     parser.add_argument(
-        "--left_win",
-        help="The starting frame index (inclusive) of the keyframe",
-        default=190,
-        type=int
-    )
-    parser.add_argument(
-        "--right_win",
-        help="The ending frame index (not inclusive) of the keyframe",
-        default=250,
-        type=int
-    )
-    parser.add_argument(
-        "--win_size",
-        help="the context window size",
-        default=5,
-        type=int
-    )
-    parser.add_argument(
         "--vid_source_root",
         help="The path to the video root",
         default="./demo_videos",
-        type=str
-    )
-    parser.add_argument(
-        "--det_result_root",
-        help="The path to the video root",
-        default=None,
         type=str
     )
     parser.add_argument(
@@ -141,52 +94,38 @@ def get_parser():
 if __name__ == "__main__":
     args = get_parser().parse_args()
     cfg = setup_cfg(args)
-
+    
     predictor = VisualizationDemo(cfg, args)
     vid_source_root = args.vid_source_root
-    det_result_root = args.det_result_root
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    exp_name = "batangle_v2"
-    file_name = "/v2.pth"
-    model_path = "./checkpoint/"+exp_name+file_name
-    window_size = args.win_size
-    model = load_model(model_path,win_len=window_size)
-    model.eval()
+    dino_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14_reg').to(device).eval()
+    s2f_model = DinoCNN(input_dim=1536).to(device).eval()
+    s2f_model.load_state_dict(torch.load('./checkpoint/batangle_v3_dino.pth'))
+    s2f_model.eval()
 
-    df = pd.DataFrame(columns=['PitchID', 'Keyframe_Pred', 'Keyframe_Confidence', 'Angle_Est', 'Angle_Conf'])
-    name_list, keyframe_list, est_angle_list, est_conf_angle_list, \
-        keyframe_conf_list, gt_anle_list, gt_conf_angle_list = [], [], [], [], [], [], []
+    df = pd.DataFrame(columns=['PitchID', 'Keyframe_Pred', 'Angle_Est', 'Angle_Confidence'])
+    name_list, keyframe_list, est_angle_list, est_conf_angle_list = [], [], [], []
     vid_list = sorted(os.listdir(vid_source_root))
     proc_bar = tqdm(range(len(vid_list)))
+
     for idx in proc_bar:
         vid_name = vid_list[idx].split('.')[0]
-        kf_gt = None
-        if det_result_root:
-            saveVid(predictor, vid_name, vid_source_root, det_result_root, args, proc_bar=proc_bar)
-            kf_idx, kf_conf, est_angle, est_conf_angle, gt_anle, gt_conf_angle \
-                = kf_angle_pred_with_load(det_result_root, vid_name, model,
-                gt_keyframe = kf_gt ,kf_range = (args.left_win, args.right_win), 
-                win_len=window_size)
-        else:
-            pred_info = get_prediction(predictor, vid_name, vid_source_root, \
-                    window=(args.left_win,args.right_win), proc_bar=proc_bar)
-            kf_idx, kf_conf, est_angle, est_conf_angle, gt_anle, gt_conf_angle \
-                    = kf_angle_pred(pred_info, model, gt_keyframe = kf_gt,
-                                    kf_range = (args.left_win, args.right_win), 
-                                    win_len=window_size)       
+        vid_path = os.path.join(vid_source_root, vid_list[idx])
+
+        keyframe, kf_idx = keyframe_detection(vid_path, dino_model, s2f_model, device)
+        pred_info = get_prediction(predictor, keyframe)
+        est_angle, est_conf_angle = kf_angle_pred(pred_info)
+
         name_list.append(vid_name)
         keyframe_list.append(kf_idx)
-        keyframe_conf_list.append(kf_conf)
         est_angle_list.append(est_angle)
         est_conf_angle_list.append(est_conf_angle)
-        gt_anle_list.append(gt_anle)
-        gt_conf_angle_list.append(gt_conf_angle)
         proc_bar.set_description('vid [{}]'.format(vid_name))
 
     df['PitchID'] = name_list
     df['Keyframe_Pred'] = keyframe_list
-    df['Keyframe_Confidence'] = keyframe_conf_list
     df['Angle_Est'] = est_angle_list
-    df['Angle_Conf'] = est_conf_angle_list
-
+    df['Angle_Confidence'] = est_conf_angle_list
     df.to_csv(args.result_path, index=False)
+

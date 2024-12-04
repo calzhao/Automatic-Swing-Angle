@@ -13,6 +13,6 @@ conda create --name detic python=3.8 -y
 conda activate detic
 conda install pytorch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 pytorch-cuda=11.8 -c pytorch -c nvidia
 
-git clone https://github.com/calzhao/MSCV-Capstone.git --recurse-submodules
-cd MSCV-Capstone
+git clone https://github.com/calzhao/Automatic-Swing-Angle.git --recurse-submodules
+cd Automatic-Swing-Angle
 bash setup.sh
